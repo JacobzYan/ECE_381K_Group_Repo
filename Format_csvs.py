@@ -51,11 +51,11 @@ default_processing_categories = {
     'N_F_U_labels': {'New', 'Found', 'Unknown'},
     'F_N_labels': {'Found, New'},
     'IP_labels': {'IP_PROXY:TRANSPARENT', 'IP_PROXY:ANONYMOUS', 'IP_PROXY:HIDDEN'},
-    'match_status': {'match_status:1'},
-    'browser_types': {'edge'},
+    'match_status': {'match_status:2'},
+    'browser_types': {'mobile safari generic'},
     'OS_types': {'Windows 10'},
     'screen_resolution': {'1920x1080'},
-    'device_type': {'mobile'},
+    'device_type': {'mobile', 'desktop'},
     'device_info': {'Windows', 'MacOs'},
     'product_CD': {'W', 'C', 'R'},
     'card4': {'visa'},
@@ -69,7 +69,7 @@ default_one_hot_list = ['T_F_labels', 'F_N_labels', 'IP_labels', 'device_type']
 
 
 
-def read_Cols(transaction_filename='train_transaction.csv', id_filename='train_identity.csv', combined_filename='', non_numerical_filename='', verbose=False):
+def Combine_DFs(transaction_filename='train_transaction.csv', id_filename='train_identity.csv', combined_filename='', non_numerical_filename='', verbose=False):
     
     # Combines given filenames for identity and transaction csvs
     # INPUTS:
@@ -95,9 +95,10 @@ def read_Cols(transaction_filename='train_transaction.csv', id_filename='train_i
     sys.stdout.flush()
     t2 = time.time()
     df_total = pd.merge(df_id, df_trans, how='outer')
-    X_train = df_total.drop(columns=['TransactionID', 'isFraud'])
-    Y_train = df_total['isFraud']
 
+    # X_train = df_total.drop(columns=['TransactionID', 'isFraud'])
+    # Y_train = df_total['isFraud']
+    X_train = df_total
 
     # Pull non numerical columns
     print('Analyzing columns...')
@@ -160,11 +161,8 @@ class ColumnFormatter:
     def format_non_numerical(self, df_input=None, non_numerical_columns=[], filename=''):
         self.vprint(f'\npassed non_numerical_columns: {non_numerical_columns}')
         
-        # Get dataframe from either passed df or csv
-        if filename:
-            df = pd.read_csv(filename)
-        else:
-            df = df_input
+        # Read in csv
+        df = df_input
         self.vprint('\tFinished instantiating df')
         
         # Format columns
@@ -200,7 +198,7 @@ class ColumnFormatter:
                 df[col] = df[col].transform(trim_match_status)
                 self.variable_output_translation['match_status'] = "stripped \'match_status:\'"
 
-            elif values.issuperset(self.processing_categories['browser_types']):
+            elif col == 'id_31' or values.issuperset(self.processing_categories['browser_types']):
                 self.vprint(f'browser_types')
                 df[col] = df[col].transform(categorize_browser_types)
                 df = self.one_hot_encode(df, col)
@@ -260,7 +258,7 @@ class ColumnFormatter:
 
         # Create the 1 hot encoding name columns
         new_col_names = [f'{col}_bit_{i}' for i in range(num_bits)]
-        
+        self.vprint(f'\t\tNew col names: {new_col_names}')
         # Create dict to translate between non-numerical data and bits to turn on with the first value in the list used as the default case
         # Also adds to a dict that tracks what non-numerical variables were assigned to what bit sequence (combination of bits in cols)
         assign_bits_dict = {}
@@ -283,30 +281,34 @@ class ColumnFormatter:
 
         # Assign these bit strings to the new named columns
         for i, bit_col in enumerate(new_df_data):
-            pd.concat([df, pd.DataFrame(data=bit_col, columns=[new_col_names[i]])], axis=1)
-
+            df = pd.concat([df, pd.DataFrame(data=bit_col, columns=[new_col_names[i]])], axis=1)
+            
         # Discard original column
         df = df.drop(col, axis=1)
 
         # DEBUG
-        if verbose:
-            print(f'DEBUG DF: {df}')
-            print(f'new col names: {new_col_names}')
-            print(f'assign_bits_dict: {assign_bits_dict}')
-            print(f'values: {values}')
-            print(f'assign_bits_dict: {assign_bits_dict}')
-            print(f'new_df_data: {new_df_data}')
+        # if verbose:
+        #     print(f'DEBUG DF: {df}')
+        #     print(f'new col names: {new_col_names}')
+        #     print(f'assign_bits_dict: {assign_bits_dict}')
+        #     print(f'values: {values}')
+        #     print(f'assign_bits_dict: {assign_bits_dict}')
+        #     print(f'new_df_data: {new_df_data}')
         
         return df
 
     # Formats Numerical columns
     def format_numerical(self, df_input, numerical_cols, filename=''):
         df = df_input.copy()
+        
         for col in numerical_cols:
 
-            # Just assigning all to mean for now, edit this section if you want to do another method
+            # Just assigning all to mean for now, edit this section if you want to do another method. Adds a column to track which vals of col are NA
+            df = pd.concat([df, df[col].isna().astype(int).rename(f'{col}_is_NA')], axis=1)
             col_mean_val = df[col].dropna().mean()
+            
             df[col] = df[col].fillna(col_mean_val)
+            
             
         # Output
         if filename:
@@ -340,7 +342,7 @@ def categorize_browser_types(browser):
                 try:
                     for b in browser_dict:
                         if b in browser.lower():
-                            return browser_dict[browser]
+                            return browser_dict[b]
                 except:
                     pass    
                 return 'other'
@@ -352,7 +354,7 @@ def categorize_OS_types(OS):
                 try:
                     for o in OS_dict:
                         if o in OS.lower():
-                            return OS_dict[OS]
+                            return OS_dict[o]
                 except:
                     pass   
                 return 'other'
@@ -369,18 +371,25 @@ def get_num_pixels(str_resolution):
 def trim_match_status(input):
 
     try:
-        return float(input.replace('match_status:'))
+        return float(input.replace('match_status:', ''))
     except:
          return input 
     
 # Helper function to transform Device Info
 def categorize_Device_Info_types(Device_info):
                 
-                Device_Info_types = {'macos': 'macos', 'ios': 'ios', 'windows': 'windows'}
+                Device_Info_types = {'mac os': 'macos', 'ios': 'ios', 'windows': 'windows', 'android': 'andriod'}
+                
+                # print(f'Device_info: {Device_info}')
+                
                 try:
-                    for o in Device_Info_types:
+                    for o in Device_Info_types.keys():
+                        # print(f'testing {o}: {o in Device_info.lower()}')
+                        # sys.stdout.flush()
                         if o in Device_info.lower():
-                            return Device_Info_types[Device_info]
+                            
+                            # print(f'\t returning {Device_Info_types[o]}')
+                            return Device_Info_types[o]
                 except:
                     pass   
                 return 'other'
@@ -392,7 +401,7 @@ def categorize_email_domain_types(Email):
                 try:
                     for e in Email_domain_types:
                         if e in Email.lower():
-                            return Email_domain_types[Email]
+                            return Email_domain_types[e]
                 except:
                     pass   
                 return 'other'

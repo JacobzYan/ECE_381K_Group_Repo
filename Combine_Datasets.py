@@ -22,7 +22,7 @@ else:
 
 
 
-read_Cols(transaction_filename=transaction_filename,
+Combine_DFs(transaction_filename=transaction_filename,
           id_filename=identity_filename,
           combined_filename=output_filename,
           non_numerical_filename='',
